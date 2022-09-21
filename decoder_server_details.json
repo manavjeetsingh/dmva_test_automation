@@ -1,0 +1,5 @@
+{
+    "docker_image_path": "/path/to/dockerfile/folder",
+    "docker_image_name": "server_image",
+    "docker_image_tag": "0.0.1"
+}
