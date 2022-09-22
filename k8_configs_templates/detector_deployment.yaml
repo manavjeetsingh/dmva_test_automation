@@ -17,7 +17,7 @@ spec:
       #nodeName: worker03
       containers:
       - name: detector
-        image: manavjeet/server_o:0.0.1
+        {{DOCKER}}
         imagePullPolicy: Always
         ports:
           - containerPort: 8001

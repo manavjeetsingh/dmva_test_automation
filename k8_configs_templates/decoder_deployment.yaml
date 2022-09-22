@@ -17,7 +17,7 @@ spec:
       nodeName: worker03
       containers:
       - name: decoder
-        image: manavjeet/server_decoder:0.0.3
+        {{DOCKER}}
         imagePullPolicy: Always
         ports:
           - containerPort: 1935
