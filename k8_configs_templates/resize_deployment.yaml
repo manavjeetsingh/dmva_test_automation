@@ -5,7 +5,7 @@ metadata:
   labels:
     app: resize
 spec:
-  replicas: 1
+  replicas: {{REPLICAS}}
   selector:
     matchLabels:
       app: resize
@@ -32,9 +32,9 @@ spec:
             port: 8001
         resources:
           limits:
-            cpu: "1000m"
+            cpu: "{{CPU_L}}m"
           requests:
-            cpu: "250m"
+            cpu: "{{CPU_R}}m"
         env:
           - name: MODULE_NAME
             value: "resize"

@@ -5,7 +5,7 @@ metadata:
   labels:
     app: detector
 spec:
-  replicas: 1
+  replicas: {{REPLICAS}}
   selector:
     matchLabels:
       app: detector
@@ -34,9 +34,9 @@ spec:
         resources:
           limits:
             # nvidia.com/gpu: 1 # requesting 1 GPU
-            cpu: "1000m"
+            cpu: "{{CPU_L}}m"
           requests:
-            cpu: "1000m"
+            cpu: "{{CPU_R}}m"
         env:
           - name: MODULE_NAME
             value: "detector"

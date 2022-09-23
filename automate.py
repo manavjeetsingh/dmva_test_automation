@@ -1,11 +1,11 @@
 #!/usr/bin/python3
-from ast import Global
 import os
 import inspect
 import json
 import time
 import threading
 import sys
+import io
 
 # GLOBAL VARS
 class vars:
@@ -13,6 +13,12 @@ class vars:
         self.BUILD_COMMON_IMAGE=False
         self.BUILD_DECODER_IMAGE=False
         self.VIDEO_FILE_PATH="../2.flv"
+        self.CONFIG_DICT=None
+        self.K8_CONFIG_PATH=None
+        self.DEFAULT_REPLICAS="1"
+        self.DEFAULT_CPU_R="1000"
+        self.DEFAULT_CPU_L="1000"
+        self.APPLY_K8_CONFIGS=True
 
 GLOBAL=vars()
 
@@ -48,21 +54,24 @@ def push_docker_image(image_name, image_tag, username, password):
     log(command)
     os.system(command)
 
-def replace_write_file(placeholder, replace_content, path, file_name,new_path):
-    """
-    Replace a placeholder in the template and puts the image into
-    actual k8s_configs
-    """
-    file = open(path+"/"+file_name,mode='r')
-    file_content = file.read()
-    file.close()
-
-    file_content=file_content.replace(placeholder, replace_content)
-
-    new_path=new_path+"/"+file_name
-    file = open(new_path, "w")
+def write_to_file(file_content,new_path):
+    file = open(new_path, "w") #new_path also contains file name
     file.write(file_content)
     file.close()
+
+## REMOVE IT
+# def replace_write_file(placeholder, replace_content, path, file_name,new_path):
+#     """
+#     Replace a placeholder in the template and puts the image into
+#     actual k8s_configs
+#     """
+#     file = open(path+"/"+file_name,mode='r')
+#     file_content = file.read()
+#     file.close()
+
+#     file_content=file_content.replace(placeholder, replace_content)
+#     new_path=new_path+"/"+file_name
+#     write_to_file(file_content,new_path)
 
 def change_docker_k8_configs(k8_configs_dict,docker_username, image_name, image_tag):
     """
@@ -70,10 +79,15 @@ def change_docker_k8_configs(k8_configs_dict,docker_username, image_name, image_
     """
     for config_type in k8_configs_dict: # dict is like filename.yaml: path, where to put final file
         docker_image = 'image: %s/%s:%s'%(docker_username,image_name,image_tag)
-        log("Adding "+docker_image+" -> "+k8_configs_dict[config_type]+"/"+config_type)
-        replace_write_file("{{DOCKER}}", docker_image, './k8_configs_templates',\
-            config_type,k8_configs_dict[config_type])
-
+        log("Adding "+docker_image+" -> "+config_type)
+        try:
+            GLOBAL.CONFIG_DICT[config_type]=\
+                GLOBAL.CONFIG_DICT[config_type].replace('{{DOCKER}}',docker_image)
+        except Exception as e:
+            print(e)
+            print("Did you put entry in *_k8_details.json?")
+            sys.exit(1)
+        
 def apply_k8_configs(k8_details):
     """
     Apply the k8 configrations to pods
@@ -99,9 +113,21 @@ def read_details():
 
 def get_decoder_ip():
     """
-    TODO: Write this
+    Gives the ip of decoder pod from the k8 cluster
     """
-    return "0.0.0.0"
+    ip=None
+    raw_data=os.popen("kubectl get pods -o wide").read()
+    buf = io.StringIO(raw_data)
+    for line in buf.readlines():
+        if line.split()[0].split("-")[0]=='decoder':
+            ip=line.split()[5]
+            log("Decoder ip is: "+ip)
+            break
+    if ip!=None:
+        return ip
+    else:
+        raise Exception("Cannot find decoder IP, is decoder running?")
+
 
 def make_decoder_listen():
     decoder_ip=get_decoder_ip()
@@ -116,8 +142,8 @@ def start_ffmpeg_server():
     command='ffmpeg -re -i %s -c copy -f flv rtmp://localhost:1935/live/sample2'%(GLOBAL.VIDEO_FILE_PATH)
     # os.system(command)
 
-def main():
-    common_server_details,decoder_server_details,docker_hub_details,common_k8_details,decoder_k8_details=read_details()
+def main(common_server_details,decoder_server_details,docker_hub_details,common_k8_details,decoder_k8_details):
+    
 
     if GLOBAL.BUILD_COMMON_IMAGE:
         #Building and pushing the common docker image
@@ -137,19 +163,23 @@ def main():
         push_docker_image(decoder_server_details["docker_image_name"],decoder_server_details["docker_image_tag"]\
             ,docker_hub_details['uname'],docker_hub_details['passwd'])
 
-    # making k8 configs using common server
-    change_docker_k8_configs(common_k8_details,docker_hub_details['uname'],common_server_details["docker_image_name"]\
-        ,common_server_details["docker_image_tag"])
+    if GLOBAL.APPLY_K8_CONFIGS:
+        # making k8 configs using common server
+        change_docker_k8_configs(common_k8_details,docker_hub_details['uname'],common_server_details["docker_image_name"]\
+            ,common_server_details["docker_image_tag"])
 
-    # making k8 config using decoder server
-    change_docker_k8_configs(decoder_k8_details,docker_hub_details['uname'],decoder_server_details["docker_image_name"]\
-        ,decoder_server_details["docker_image_tag"])
-    
-    # apply_k8_configs(common_k8_details)
-    # apply_k8_configs(decoder_k8_details)
+        # making k8 config using decoder server
+        change_docker_k8_configs(decoder_k8_details,docker_hub_details['uname'],decoder_server_details["docker_image_name"]\
+            ,decoder_server_details["docker_image_tag"])
+        
+        save_config_files(common_k8_details,decoder_k8_details)
 
-    # log("Sleeping for 30 seconds after apply k8 configs.")
-    # time.sleep(30)
+        apply_k8_configs(common_k8_details)
+        apply_k8_configs(decoder_k8_details)
+
+
+        log("Sleeping for 300 seconds after apply k8 configs.")
+        time.sleep(300)
 
     # Curling the decoder to make it listen to the server
     
@@ -170,6 +200,8 @@ def parse_input():
         if (arg=='-h'):
             help()
             sys.exit(0)
+        elif (arg=='-xk8'):
+            GLOBAL.APPLY_K8_CONFIGS=False
         elif (arg=='-bci'):
             GLOBAL.BUILD_COMMON_IMAGE=True
         elif (arg=='-bdi'):
@@ -179,32 +211,177 @@ def parse_input():
             try:
                 GLOBAL.VIDEO_FILE_PATH=sys.argv[i]
                 if GLOBAL.VIDEO_FILE_PATH[0]=='-':
-                    raise Exception("")
-            except:
-                print("Cannot parse video name.")
+                    raise Exception("Cannot path -vid argument")
+            except Exception as e:
+                print("Cannot parse video name:",e)
                 sys.exit(1)
+        elif (arg=='-r'):
+            i+=1
+            try:
+                arg=sys.argv[i]
+                if arg[0]=='-':
+                    raise Exception("Cannot parse -r argument")
+                
+                k8_config_name,replicas=arg.split(':')
+
+                if replicas=='':
+                    raise Exception("Cannot parse -r argument")
+
+
+                if k8_config_name in GLOBAL.CONFIG_DICT.keys():
+                    GLOBAL.CONFIG_DICT[k8_config_name]=\
+                        GLOBAL.CONFIG_DICT[k8_config_name].replace('{{REPLICAS}}', replicas)
+                    log("REPLICAS set to "+replicas+" in k8_configs")
+                    
+                else:
+                    raise Exception("wrong k8_config_name. Suggestion: add .yaml in the name if not already done.")
+
+            except Exception as e:
+                print("Cannot parse number of replicas:",e)
+                sys.exit(1)
+
+        elif (arg=='-cpu_r'):
+            i+=1
+            try:
+                arg=sys.argv[i]
+                if arg[0]=='-':
+                    raise Exception("Cannot parse -cpu_r argument")
+                
+                k8_config_name,cpu_r=arg.split(':')
+
+                if cpu_r=='':
+                    raise Exception("Cannot parse -cpu_r argument")
+
+                if k8_config_name in GLOBAL.CONFIG_DICT.keys():
+                    GLOBAL.CONFIG_DICT[k8_config_name]=\
+                        GLOBAL.CONFIG_DICT[k8_config_name].replace('{{CPU_R}}', cpu_r)
+                    log("CPU_R set to "+cpu_r+" in k8_configs")
+                    
+                else:
+                    raise Exception("wrong k8_config_name. Suggestion: add .yaml in the name if not already done.")
+
+            except Exception as e:
+                print("Cannot parse number of cpu request:",e)
+                sys.exit(1)
+
+        elif (arg=='-cpu_l'):
+            i+=1
+            try:
+                arg=sys.argv[i]
+                if arg[0]=='-':
+                    raise Exception("Cannot parse -l argument")
+                
+                k8_config_name,cpu_l=arg.split(':')
+
+                if cpu_l=='':
+                    raise Exception("Cannot parse -cpu_l argument")
+
+                if k8_config_name in GLOBAL.CONFIG_DICT.keys():
+                    GLOBAL.CONFIG_DICT[k8_config_name]=\
+                        GLOBAL.CONFIG_DICT[k8_config_name].replace('{{CPU_L}}', cpu_l)
+                    log("CPU_L set to "+cpu_l+" in k8_configs")
+                    
+                else:
+                    raise Exception("wrong k8_config_name. Suggestion: add .yaml in the name if not already done.")
+
+            except Exception as e:
+                print("Cannot parse number of cpu limit:",e)
+                sys.exit(1)
+
+        elif (arg=='-o'):
+            i+=1
+            try:
+                arg=sys.argv[i]
+                if arg[0]=='-':
+                    raise Exception("Cannot parse -o argument")
+                
+                GLOBAL.K8_CONFIG_PATH=arg
+                log("K8 config out set to "+arg)
+
+            except Exception as e:
+                print("Cannot parse k8 config out path:",e)
+                sys.exit(1)
+
 
 def help():
     """
     prints the help message
     """
     help_message=[
-        '-h: prints this help message',
+        '-h - prints this help message',
         '-bci - build common docker image',
         '-bdi - build decoder docker image',
+        '-xk8 - do not create new k8_configs and apply it'
         '-vid <path_to_video> - give path to custom video image for testing',
-        #TODO
-        '-r <k8config_name.json>:<no of replicas> - Runs the mentioned number of replicas for the block',
-        '-cpu_req <k8config_name.json>:<millicores> - sets request cpu in millicores for the given block',
-        '-cpu_limit <k8config_name.json>:<millicores> - sets cpu limit in millicores for the given block' 
+        '-r <k8config_name.yaml>:<no of replicas> - Runs the mentioned number of replicas for the block. Default=1.',
+        '-cpu_r <k8config_name.yaml>:<millicores> - sets request cpu in millicores for the given block. Default=3500',
+        '-cpu_l <k8config_name.yaml>:<millicores> - sets cpu limit in millicores for the given block. Default=3500',
+        '-o /path/to/k8_config_folder - sets custom k8_configs folder. By default used from *_k8_details.json"'
     ]
 
     for i in help_message:
         print(i)
 
+
+def get_config_files(common_k8_details,decoder_k8_details):
+    """
+    Loads the k8_config files into the memory and returns as a dictionary.
+    """
+    to_ret={}
+
+    for file_name in common_k8_details:
+        file = open("./k8_configs_templates/"+file_name,mode='r')
+        data = file.read()
+        file.close()
+
+        to_ret[file_name]=data
+
+    for file_name in decoder_k8_details:
+        file = open("./k8_configs_templates/"+file_name,mode='r')
+        data = file.read()
+        file.close()
+        to_ret[file_name]=data
+    return to_ret
+
+def set_config_defaults():
+    """
+    Set default vaulues in the config files if not given as arguments
+    """
+    pass
+    for k8_config_name in GLOBAL.CONFIG_DICT:
+        GLOBAL.CONFIG_DICT[k8_config_name]=GLOBAL.CONFIG_DICT[k8_config_name]\
+            .replace('{{REPLICAS}}', GLOBAL.DEFAULT_REPLICAS)
+
+        GLOBAL.CONFIG_DICT[k8_config_name]=GLOBAL.CONFIG_DICT[k8_config_name]\
+            .replace('{{CPU_L}}', GLOBAL.DEFAULT_CPU_L)
+
+        GLOBAL.CONFIG_DICT[k8_config_name]=GLOBAL.CONFIG_DICT[k8_config_name]\
+            .replace('{{CPU_R}}', GLOBAL.DEFAULT_CPU_R)
+
+
+def save_config_files(common_k8_details,decoder_k8_details):
+    """
+    Saves the k8 configration files in the given or default location.
+    """
+    if GLOBAL.K8_CONFIG_PATH!=None:
+        for k8_config_name in common_k8_details:
+            write_to_file(GLOBAL.CONFIG_DICT[k8_config_name],GLOBAL.K8_CONFIG_PATH+'/'+k8_config_name)
+
+        for k8_config_name in decoder_k8_details:
+            write_to_file(GLOBAL.CONFIG_DICT[k8_config_name],GLOBAL.K8_CONFIG_PATH+'/'+k8_config_name)
+
+    else:
+        for k8_config_name in common_k8_details:
+            write_to_file(GLOBAL.CONFIG_DICT[k8_config_name],common_k8_details[k8_config_name]+'/'+k8_config_name)
+
+        for k8_config_name in decoder_k8_details:
+            write_to_file(GLOBAL.CONFIG_DICT[k8_config_name],decoder_k8_details[k8_config_name]+'/'+k8_config_name)
 if __name__=="__main__":
-    #TODO: create a temporary copy of k8_config templates and change info there, 
-    # only after all that is done, move it to k8s_configurations
+    common_server_details,decoder_server_details,docker_hub_details,common_k8_details,decoder_k8_details=read_details()
+
+    config_files=get_config_files(common_k8_details,decoder_k8_details)
+    GLOBAL.CONFIG_DICT=config_files
     parse_input()
-    main()
+    set_config_defaults()
+    main(common_server_details,decoder_server_details,docker_hub_details,common_k8_details,decoder_k8_details)
     
