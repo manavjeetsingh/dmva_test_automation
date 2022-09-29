@@ -25,6 +25,12 @@ GLOBAL=vars()
 def log(s):
     print("::>",inspect.stack()[1][3]+':',s)
 
+def execute(command):
+    ret=os.system(command)
+    if ret!=0:
+        print("ERROR: %s, command did not work"%(command))
+        sys.exit(1)
+
 
 def build_docker(path_to_dockerfile,image_name,image_tag):
     """
@@ -32,7 +38,7 @@ def build_docker(path_to_dockerfile,image_name,image_tag):
     """
     command='docker build -t %s:%s %s'%(image_name,image_tag,path_to_dockerfile)
     log(command)
-    os.system(command)
+    execute(command)
 
 def usertag_docker_image(image_name, image_tag, username):
     """
@@ -40,7 +46,7 @@ def usertag_docker_image(image_name, image_tag, username):
     """    
     command='docker tag %s:%s %s/%s:%s'%(image_name,image_tag, username, image_name,image_tag)
     log(command)
-    os.system(command)
+    execute(command)
 
 def push_docker_image(image_name, image_tag, username, password):
     """
@@ -49,10 +55,10 @@ def push_docker_image(image_name, image_tag, username, password):
     """
     command='docker login -u "%s" -p "%s" docker.io'%(username, password)
     log(command)
-    os.system(command)
+    execute(command)
     command='docker push %s/%s:%s'%(username, image_name,image_tag)
     log(command)
-    os.system(command)
+    execute(command)
 
 def write_to_file(file_content,new_path):
     file = open(new_path, "w") #new_path also contains file name
@@ -92,11 +98,12 @@ def apply_k8_configs(k8_details):
     """
     Apply the k8 configrations to pods
     """
+    time.sleep(1)
     for k8 in k8_details:
         config_path=k8_details[k8]+"/"+k8
         command='kubectl apply -f %s'%(config_path)
         log(command)
-        os.system(command)
+        execute(command)
 
 
 def read_details():
@@ -131,16 +138,16 @@ def get_decoder_ip():
 
 def make_decoder_listen():
     decoder_ip=get_decoder_ip()
-    command="curl "+decoder_ip+":5057/add-decode-task/?source=rtmp%3A%2F%2F130.245.127.103%3A1935%2Flive%2Fsample_2"
+    command="curl "+decoder_ip+":5057/add-decode-task/?source=rtmp%3A%2F%2F130.245.127.103%3A1935%2Flive%2Fsample2"
     log("Curling the decoder: " + command)
-    # os.system(command)
+    execute(command)
 
 
 def start_ffmpeg_server():
     time.sleep(2) # waiting for decoder to get ready
     log("Video path: "+GLOBAL.VIDEO_FILE_PATH)
     command='ffmpeg -re -i %s -c copy -f flv rtmp://localhost:1935/live/sample2'%(GLOBAL.VIDEO_FILE_PATH)
-    # os.system(command)
+    execute(command)
 
 def main(common_server_details,decoder_server_details,docker_hub_details,common_k8_details,decoder_k8_details):
     
@@ -234,7 +241,7 @@ def parse_input():
                     log("REPLICAS set to "+replicas+" in k8_configs")
                     
                 else:
-                    raise Exception("wrong k8_config_name. Suggestion: add .yaml in the name if not already done.")
+                    raise Exception("wrong k8_config_name: %s. Suggestion: add .yaml in the name if not already done."%k8_config_name)
 
             except Exception as e:
                 print("Cannot parse number of replicas:",e)
