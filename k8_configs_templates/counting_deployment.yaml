@@ -40,8 +40,8 @@ metadata:
 spec:
   selector:
     app: counting
-  type: LoadBalancer
-  externalIPs:
-  - 192.168.0.13
+  # type: LoadBalancer
+  # externalIPs:
+  # - 192.168.0.13
   ports:
     - port : 8001

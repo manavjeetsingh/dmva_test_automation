@@ -1,5 +1,6 @@
 {
     "docker_image_path": "../livego",
-    "docker_image_name": "server_decoder",
-    "docker_image_tag": "0.0.7"
+    "docker_image_name": "server_decoder_resize",
+    "docker_image_tag": "one_sec_connection",
+    "Dockerfile": "Dockerfile_resize"
 }

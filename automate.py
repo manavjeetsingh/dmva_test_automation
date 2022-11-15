@@ -12,7 +12,7 @@ class vars:
     def __init__(self): #Also take all these as arguments
         self.BUILD_COMMON_IMAGE=False
         self.BUILD_DECODER_IMAGE=False
-        self.VIDEO_FILE_PATH="../2.flv"
+        self.VIDEO_FILE_PATH="../2_single_frame_60fps.flv"
         self.CONFIG_DICT=None
         self.K8_CONFIG_PATH=None
         self.DEFAULT_REPLICAS="1"
@@ -32,11 +32,12 @@ def execute(command):
         sys.exit(1)
 
 
-def build_docker(path_to_dockerfile,image_name,image_tag):
+def build_docker(path_to_dockerfile,image_name,image_tag,dockerfile):
     """
     Builds docker image based on given image name and image tag
+    TODO: add custom dockerfile
     """
-    command='docker build -t %s:%s %s'%(image_name,image_tag,path_to_dockerfile)
+    command='docker build -f %s -t %s:%s %s'%(path_to_dockerfile+"/"+dockerfile,image_name,image_tag,path_to_dockerfile)
     log(command)
     execute(command)
 
@@ -127,7 +128,10 @@ def get_decoder_ip():
     buf = io.StringIO(raw_data)
     for line in buf.readlines():
         if line.split()[0].split("-")[0]=='decoder':
-            ip=line.split()[5]
+            if line.split()[3]!='0':
+                ip=line.split()[7]
+            else:
+                ip=line.split()[5]
             log("Decoder ip is: "+ip)
             break
     if ip!=None:
@@ -138,7 +142,7 @@ def get_decoder_ip():
 
 def make_decoder_listen():
     decoder_ip=get_decoder_ip()
-    command="curl "+decoder_ip+":5057/add-decode-task/?source=rtmp%3A%2F%2F130.245.127.103%3A1935%2Flive%2Fsample2"
+    command="curl "+decoder_ip+":5057/add-decode-task/?source=rtmp%3A%2F%2F130.245.127.102%3A1935%2Flive%2Fsample2"
     log("Curling the decoder: " + command)
     execute(command)
 
@@ -155,7 +159,7 @@ def main(common_server_details,decoder_server_details,docker_hub_details,common_
     if GLOBAL.BUILD_COMMON_IMAGE:
         #Building and pushing the common docker image
         build_docker(common_server_details["docker_image_path"], common_server_details["docker_image_name"]\
-            , common_server_details["docker_image_tag"])
+            , common_server_details["docker_image_tag"],common_server_details["Dockerfile"])
         usertag_docker_image(common_server_details["docker_image_name"],common_server_details["docker_image_tag"]\
             ,docker_hub_details['uname'])
         push_docker_image(common_server_details["docker_image_name"],common_server_details["docker_image_tag"]\
@@ -164,7 +168,7 @@ def main(common_server_details,decoder_server_details,docker_hub_details,common_
     if GLOBAL.BUILD_DECODER_IMAGE:
         #Building and pushing the common docker image
         build_docker(decoder_server_details["docker_image_path"], decoder_server_details["docker_image_name"]\
-            , decoder_server_details["docker_image_tag"])
+            , decoder_server_details["docker_image_tag"],decoder_server_details["Dockerfile"])
         usertag_docker_image(decoder_server_details["docker_image_name"],decoder_server_details["docker_image_tag"]\
             ,docker_hub_details['uname'])
         push_docker_image(decoder_server_details["docker_image_name"],decoder_server_details["docker_image_tag"]\
@@ -185,8 +189,11 @@ def main(common_server_details,decoder_server_details,docker_hub_details,common_
         apply_k8_configs(decoder_k8_details)
 
 
-        log("Sleeping for 300 seconds after apply k8 configs.")
-        time.sleep(300)
+        log("Sleeping for 150 seconds after apply k8 configs.")
+        for i in range(150):
+            time.sleep(1)
+            if i%10==0:
+                print(i)
 
     # Curling the decoder to make it listen to the server
     
@@ -318,7 +325,7 @@ def help():
         '-h - prints this help message',
         '-bci - build common docker image',
         '-bdi - build decoder docker image',
-        '-xk8 - do not create new k8_configs and apply it'
+        '-xk8 - do not create new k8_configs and apply it',
         '-vid <path_to_video> - give path to custom video image for testing',
         '-r <k8config_name.yaml>:<no of replicas> - Runs the mentioned number of replicas for the block. Default=1.',
         '-cpu_r <k8config_name.yaml>:<millicores> - sets request cpu in millicores for the given block. Default=3500',

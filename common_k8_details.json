@@ -1,5 +1,4 @@
 {
     "counting_deployment.yaml": "../k8s_configurations",
-    "detector_deployment.yaml": "../k8s_configurations",
-    "resize_deployment.yaml": "../k8s_configurations"
+    "detector_deployment.yaml": "../k8s_configurations"
 }

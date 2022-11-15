@@ -52,9 +52,9 @@ metadata:
 spec:
   selector:
     app: detector
-  type: LoadBalancer
-  externalIPs:
-  - 192.168.0.12
+  # type: LoadBalancer
+  # externalIPs:
+  # - 192.168.0.12
   ports:
     - port : 8001
 ---

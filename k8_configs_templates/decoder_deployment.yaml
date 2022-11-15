@@ -14,7 +14,7 @@ spec:
       labels:
         app: decoder
     spec:
-      nodeName: worker03
+      # nodeName: worker03
       containers:
       - name: decoder
         {{DOCKER}}
@@ -44,7 +44,7 @@ metadata:
 spec:
   selector:
     app: decoder
-  type: LoadBalancer
+  # type: LoadBalancer
   externalIPs:
   - 192.168.0.10
   ports:
